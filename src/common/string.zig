@@ -78,4 +78,7 @@ pub const String = struct {
     pub fn strip(self: *String) !void {
         _ = self;
     }
+    pub fn find(self: String) !usize {
+        _ = self;
+    }
 };

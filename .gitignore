@@ -1,0 +1,8 @@
+# OS-Specific
+**/.DS_Store
+
+# IDE
+.vscode
+
+# Zig Artifacts
+zig-out/
