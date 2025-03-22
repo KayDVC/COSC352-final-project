@@ -6,3 +6,4 @@
 
 # Zig Artifacts
 zig-out/
+.zig*/
