@@ -16,11 +16,9 @@ pub fn main() !void {
     const strings = try page_content.split(allocator);
     defer allocator.free(strings);
 
-    for (strings, 0..) |string, i| {
-        if (i > 50) {
-            break;
-        }
-        try stdout.print("Line Found: {s}\n", .{string.toSlice()});
+    for (strings, 0..) |*string, i| {
+        string.strip();
+        try stdout.print("{d}: {s}\n", .{ i, string.toSlice() });
     }
 }
 

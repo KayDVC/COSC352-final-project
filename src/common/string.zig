@@ -88,11 +88,12 @@ pub const String = struct {
         return StringError.EmptyString;
     }
 
-    // TODO
     pub fn lstrip(self: *String) void {
         if (self.findFirstNonWhiteSpace(Position.START)) |end| {
             _ = self.remove(0, end) catch void;
-        } else |_| {}
+        } else |err| {
+            self.handleEmptyStringStrip(err);
+        }
     }
 
     pub fn rstrip(self: *String) void {
@@ -100,7 +101,9 @@ pub const String = struct {
         // index it finds, we need to increment its value by one.
         if (self.findFirstNonWhiteSpace(Position.END)) |start| {
             _ = self.remove((start + 1), self.len) catch void;
-        } else |_| {}
+        } else |err| {
+            self.handleEmptyStringStrip(err);
+        }
     }
 
     pub fn strip(self: *String) void {
@@ -109,13 +112,9 @@ pub const String = struct {
     }
 
     pub fn find(self: String, char: u8) String.StringError!usize {
-        if (self._buffer == null or self._buffer.len == 0) return StringError.EmptyString;
+        if (self._buffer == null or self.len == 0) return StringError.EmptyString;
 
-        for (self._buffer, 0..) |c, i| {
-            if (c == char) {
-                return i;
-            }
-        }
+        for (0..self.len) |i| if (self._buffer.?[i] == char) return i;
 
         return StringError.CharNotFound;
     }
@@ -138,7 +137,7 @@ pub const String = struct {
     }
 
     fn findFirstNonWhiteSpace(self: String, position: String.Position) String.StringError!usize {
-        if (self._buffer == null or self._buffer.?.len == 0) return StringError.EmptyString;
+        if (self._buffer == null or self.len == 0) return StringError.EmptyString;
 
         const whitespace_chars = struct {
             const Self = @This();
@@ -153,13 +152,24 @@ pub const String = struct {
         if (position == Position.START) {
             for (0..self.len) |j| if (!whitespace_chars.contains(self._buffer.?[j])) return j;
         } else {
-            var i = self.len - 1;
+            var i: usize = self.len;
             for (0..self.len) |_| {
-                if (!whitespace_chars.contains(self._buffer.?[i])) return (i);
                 i -= 1;
+                if (!whitespace_chars.contains(self._buffer.?[i])) return (i);
             }
         }
         return StringError.CharNotFound;
+    }
+
+    fn handleEmptyStringStrip(self: *String, err: StringError) void {
+        switch (err) {
+            StringError.CharNotFound => { // Empty String, just "remove" all.
+                _ = self.remove(0, self.len) catch void;
+            },
+            else => {
+                // intentionally empty.
+            },
+        }
     }
 };
 
@@ -279,6 +289,13 @@ test "test lstrip" {
         try testing.expectEqual(in.len, string._capacity);
         try testing.expectEqualStrings(exp, string.toSlice());
     }
+
+    // Test empty string doesn't throw error.
+    var string = try String.initWithValue(allocator, "   ");
+    defer string.deinit();
+
+    string.lstrip();
+    try testing.expectEqual(0, string.len);
 }
 
 test "test rstrip" {
@@ -308,6 +325,13 @@ test "test rstrip" {
         try testing.expectEqual(in.len, string._capacity);
         try testing.expectEqualStrings(exp, string.toSlice());
     }
+
+    // Test empty string doesn't throw error.
+    var string = try String.initWithValue(allocator, "   ");
+    defer string.deinit();
+
+    string.rstrip();
+    try testing.expectEqual(0, string.len);
 }
 
 test "test strip" {
@@ -354,4 +378,40 @@ test "test strip" {
         try testing.expectEqual(in.len, string._capacity);
         try testing.expectEqualStrings(exp, string.toSlice());
     }
+
+    // Test empty string doesn't throw error.
+    var string = try String.initWithValue(allocator, "   ");
+    defer string.deinit();
+
+    string.strip();
+    try testing.expectEqual(0, string.len);
+}
+
+test "test find" {
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer testing.expectEqual(std.heap.Check.ok, gpa.deinit()) catch @panic("String leak");
+
+    const allocator = gpa.allocator();
+
+    var alphabet: String = try String.initWithValue(allocator, "abcdefghijklmnopqrstuvqxyzABCDEFGHIJKLMNOPQRSTUVWXYZ");
+    defer alphabet.deinit();
+
+    const test_cases = [_][2]u8{
+        [2]u8{ 'f', 5 },
+        [2]u8{ 'z', 25 },
+        [2]u8{ 'a', 0 },
+        [2]u8{ 'o', 14 },
+        [2]u8{ 'Z', 51 },
+        [2]u8{ 'A', 26 },
+    };
+
+    for (test_cases) |case| {
+        const to_find: u8 = case[0];
+        const exp_index: u8 = case[1];
+
+        try testing.expectEqual(exp_index, try alphabet.find(to_find));
+    }
+
+    try alphabet.remove(28, 29); // remove 'C'
+    try testing.expectError(String.StringError.CharNotFound, alphabet.find('C'));
 }
