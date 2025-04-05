@@ -5,7 +5,7 @@ const constants = @import("../modules.zig").common.constants;
 const Allocator = std.mem.Allocator;
 
 pub const String = struct {
-    len: usize,
+    len: usize = 0,
     allocator: Allocator,
 
     // To hell with Zig and it's lack of visibility modifiers.
@@ -34,12 +34,12 @@ pub const String = struct {
 
     pub fn initReserve(allocator: Allocator, capacity: usize) !String {
         var string = String.init(allocator);
-        string._buffer = try string.allocator.alloc(u8, capacity);
-        string._capacity = capacity;
-
+        try string.alloc(capacity);
         return string;
     }
 
+    /// Creates owned buffer of data. Caller should handle deallocation of input
+    /// buffer.
     pub fn initWithValue(allocator: Allocator, value: []const u8) !String {
         var string = try String.initReserve(allocator, value.len);
         @memcpy(string._buffer.?, value);
@@ -57,10 +57,19 @@ pub const String = struct {
     }
 
     pub fn toSlice(self: String) []u8 {
+        return self.getSlice(0, self.len);
+    }
+
+    pub fn getSlice(self: String, start: usize, end: usize) []u8 {
         if (self._buffer) |buffer| {
-            return buffer[0..self.len];
+            return buffer[start..end];
         }
         return &[_]u8{};
+    }
+
+    pub fn at(self: String, index: usize) String.StringError!u8 {
+        if (index >= self.len) return StringError.InvalidIndex;
+        return self._buffer.?[index];
     }
 
     pub fn split(self: *String, allocator: Allocator) ![]String {
@@ -111,16 +120,24 @@ pub const String = struct {
         self.rstrip();
     }
 
-    pub fn find(self: String, char: u8) String.StringError!usize {
-        if (self._buffer == null or self.len == 0) return StringError.EmptyString;
+    pub fn contains(self: String, char: u8) bool {
+        _ = self.find(char) catch return false;
+        return true;
+    }
 
-        for (0..self.len) |i| if (self._buffer.?[i] == char) return i;
+    pub fn find(self: String, char: u8) String.StringError!usize {
+        return self.findFrom(0, char);
+    }
+
+    pub fn findFrom(self: String, start: usize, char: u8) String.StringError!usize {
+        if (self.len == 0) return StringError.EmptyString else if (start >= self.len) return StringError.InvalidIndex;
+        for (start..self.len) |i| if (self._buffer.?[i] == char) return i;
 
         return StringError.CharNotFound;
     }
 
     // "Remove" from start (inclusive) to end (exclusive)
-    fn remove(self: *String, start: usize, end: usize) String.StringError!void {
+    pub fn remove(self: *String, start: usize, end: usize) String.StringError!void {
         if (self._buffer == null or self.len == 0) {
             return StringError.EmptyString;
         } else if ((start < 0) or (start > end) or (end > self.len)) {
@@ -136,26 +153,40 @@ pub const String = struct {
         self.len -= difference;
     }
 
+    pub fn append(self: *String, char: u8) !void {
+        if (self._buffer == null) {
+            try self.alloc(_GROWTH_RATE);
+        } else if (self.len == self._capacity) {
+            try self.realloc();
+        }
+        self._buffer.?[self.len] = char;
+        self.len += 1;
+    }
+
+    pub fn appendSlice(self: *String, chars: []const u8) !void {
+        for (chars) |char| try self.append(char);
+    }
+
+    fn alloc(self: *String, size: usize) !void {
+        self._buffer = try self.allocator.alloc(u8, size);
+        self._capacity = size;
+    }
+    fn realloc(self: *String) !void {
+        const new_capacity = self._capacity * _GROWTH_RATE;
+        self._buffer = try self.allocator.realloc(self._buffer.?, new_capacity);
+        self._capacity = new_capacity;
+    }
+
     fn findFirstNonWhiteSpace(self: String, position: String.Position) String.StringError!usize {
         if (self._buffer == null or self.len == 0) return StringError.EmptyString;
 
-        const whitespace_chars = struct {
-            const Self = @This();
-            const chars = [_]u8{ constants.NEWLINE, constants.TAB, constants.SPACE };
-
-            fn contains(char: u8) bool {
-                for (Self.chars) |c| if (c == char) return true;
-                return false;
-            }
-        };
-
         if (position == Position.START) {
-            for (0..self.len) |j| if (!whitespace_chars.contains(self._buffer.?[j])) return j;
+            for (0..self.len) |j| if (!constants.WHITESPACE.contains(self._buffer.?[j])) return j;
         } else {
             var i: usize = self.len;
             for (0..self.len) |_| {
                 i -= 1;
-                if (!whitespace_chars.contains(self._buffer.?[i])) return (i);
+                if (!constants.WHITESPACE.contains(self._buffer.?[i])) return (i);
             }
         }
         return StringError.CharNotFound;
@@ -408,10 +439,114 @@ test "test find" {
     for (test_cases) |case| {
         const to_find: u8 = case[0];
         const exp_index: u8 = case[1];
-
         try testing.expectEqual(exp_index, try alphabet.find(to_find));
     }
 
     try alphabet.remove(28, 29); // remove 'C'
     try testing.expectError(String.StringError.CharNotFound, alphabet.find('C'));
+}
+
+test "test find from index" {
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer testing.expectEqual(std.heap.Check.ok, gpa.deinit()) catch @panic("String leak");
+
+    const allocator = gpa.allocator();
+
+    var alphabet: String = try String.initWithValue(allocator, "abcdefghijklmnopqrstuvqxyzabcdefghijklmnopqrstuvqxyz");
+    defer alphabet.deinit();
+
+    const test_cases = [_][3]u8{
+        [3]u8{ 'f', 20, 31 },
+        [3]u8{ 'z', 26, 51 },
+        [3]u8{ 'a', 0, 0 },
+        [3]u8{ 'o', 2, 14 },
+    };
+
+    for (test_cases) |case| {
+        const to_find: u8 = case[0];
+        const start_from: u8 = case[1];
+        const exp_index: u8 = case[2];
+        try testing.expectEqual(exp_index, try alphabet.findFrom(start_from, to_find));
+    }
+
+    try alphabet.remove(31, 32); // remove second 'f'
+    try testing.expectError(String.StringError.CharNotFound, alphabet.findFrom(26, 'f'));
+    try testing.expectError(String.StringError.InvalidIndex, alphabet.findFrom(51, 'x'));
+
+    var empty_string: String = String.init(allocator);
+    defer empty_string.deinit();
+
+    try testing.expectError(String.StringError.EmptyString, empty_string.findFrom(0, 'b'));
+}
+
+test "test append - single, no initial values" {
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer testing.expectEqual(std.heap.Check.ok, gpa.deinit()) catch @panic("String leak");
+
+    const allocator = gpa.allocator();
+    var string: String = String.init(allocator);
+    defer string.deinit();
+
+    const chars = [_]u8{ 'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h' };
+
+    for (chars, 1..) |char, exp_len| {
+        try string.append(char);
+        try testing.expectEqual(exp_len, string.len);
+        try testing.expectEqual(char, string.at(string.len - 1));
+    }
+}
+
+test "test append - single, initial values" {
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer testing.expectEqual(std.heap.Check.ok, gpa.deinit()) catch @panic("String leak");
+
+    const allocator = gpa.allocator();
+    var string: String = try String.initWithValue(allocator, "ZYXWVUT");
+    defer string.deinit();
+
+    const chars = [_]u8{ 'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h' };
+
+    for (chars, (string.len + 1)..) |char, exp_len| {
+        try string.append(char);
+        try testing.expectEqual(exp_len, string.len);
+        try testing.expectEqual(char, string.at(string.len - 1));
+    }
+}
+
+test "test append - multi, no initial values" {
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer testing.expectEqual(std.heap.Check.ok, gpa.deinit()) catch @panic("String leak");
+
+    const allocator = gpa.allocator();
+    var string = String.init(allocator);
+    defer string.deinit();
+
+    const test_cases = [_][]const u8{ "foo", "bar", "baz", "deadbeef", "baddcafe" };
+
+    var exp_len: usize = 0;
+    for (test_cases) |case| {
+        exp_len += case.len;
+        try string.appendSlice(case);
+        try testing.expectEqual(exp_len, string.len);
+        try testing.expectEqualStrings(case, string.getSlice((string.len - case.len), string.len));
+    }
+}
+
+test "test append - multi, initial values" {
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer testing.expectEqual(std.heap.Check.ok, gpa.deinit()) catch @panic("String leak");
+
+    const allocator = gpa.allocator();
+    var string: String = try String.initWithValue(allocator, "ZYXWVUT");
+    defer string.deinit();
+
+    const test_cases = [_][]const u8{ "foo", "bar", "baz", "deadbeef", "baddcafe" };
+
+    var exp_len: usize = string.len;
+    for (test_cases) |case| {
+        exp_len += case.len;
+        try string.appendSlice(case);
+        try testing.expectEqual(exp_len, string.len);
+        try testing.expectEqualStrings(case, string.getSlice((string.len - case.len), string.len));
+    }
 }

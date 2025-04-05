@@ -26,6 +26,9 @@ pub const Request = struct {
         const result = try client.fetch(.{ .method = std.http.Method.GET, .location = .{ .url = self.uri }, .response_storage = .{ .dynamic = &response_body }, .max_append_size = @as(usize, MAX_CONTENT_BYTES) });
         _ = result;
 
-        return String.initWithValue(allocator, try response_body.toOwnedSlice());
+        const response_buffer: []const u8 = try response_body.toOwnedSlice();
+        defer allocator.free(response_buffer);
+
+        return String.initWithValue(allocator, response_buffer);
     }
 };

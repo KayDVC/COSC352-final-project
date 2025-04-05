@@ -13,13 +13,7 @@ pub fn main() !void {
     var page_content = try retrievePage();
     defer page_content.deinit();
 
-    const strings = try page_content.split(allocator);
-    defer allocator.free(strings);
-
-    for (strings, 0..) |*string, i| {
-        string.strip();
-        try stdout.print("{d}: {s}\n", .{ i, string.toSlice() });
-    }
+    try stdout.print("Returned Content: {s}\n", .{page_content.toSlice()});
 }
 
 fn retrievePage() !String {

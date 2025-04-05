@@ -11,4 +11,4 @@ RUN apk update && \
 COPY . /apps/project3
 WORKDIR /apps/project3
 
-ENTRYPOINT [ "zig", "build", "test", "--summary", "all" ]
+# ENTRYPOINT [ "zig", "build", "test", "--summary", "all" ]
