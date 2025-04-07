@@ -2,6 +2,7 @@ const std = @import("std");
 const local = @import("modules.zig");
 
 const http = local.http;
+const html = local.html;
 const String = local.common.String;
 
 var gpa = std.heap.GeneralPurposeAllocator(.{}){};
@@ -13,7 +14,12 @@ pub fn main() !void {
     var page_content = try retrievePage();
     defer page_content.deinit();
 
-    try stdout.print("Returned Content: {s}\n", .{page_content.toSlice()});
+    try writeToFile(page_content);
+    var parser = html.Parser.init(allocator);
+    defer parser.deinit();
+
+    try parser.parse(page_content);
+    try stdout.print("Root tag: {s}\n", .{parser.root.?.tag.?.toSlice()});
 }
 
 fn retrievePage() !String {
@@ -21,4 +27,10 @@ fn retrievePage() !String {
     defer request.deinit();
 
     return request.get(allocator);
+}
+
+fn writeToFile(content: String) !void {
+    var file = try std.fs.cwd().createFile("output.html", .{});
+    defer file.close();
+    try file.writeAll(content.toSlice());
 }

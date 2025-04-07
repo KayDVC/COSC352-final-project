@@ -57,17 +57,17 @@ pub const String = struct {
     }
 
     pub fn toSlice(self: String) []u8 {
-        return self.getSlice(0, self.len);
+        return self.getSlice(0, self.len) catch &[_]u8{};
     }
 
-    pub fn getSlice(self: String, start: usize, end: usize) []u8 {
-        if (self._buffer) |buffer| {
-            return buffer[start..end];
-        }
-        return &[_]u8{};
+    pub fn getSlice(self: String, start: usize, end: usize) StringError![]u8 {
+        if (self._buffer == null) return StringError.EmptyString;
+        if ((start >= self.len) or (end > self.len)) return StringError.InvalidIndex;
+
+        return self._buffer.?[start..end];
     }
 
-    pub fn at(self: String, index: usize) String.StringError!u8 {
+    pub fn at(self: String, index: usize) StringError!u8 {
         if (index >= self.len) return StringError.InvalidIndex;
         return self._buffer.?[index];
     }
@@ -125,11 +125,29 @@ pub const String = struct {
         return true;
     }
 
-    pub fn find(self: String, char: u8) String.StringError!usize {
+    pub fn find(self: String, char: u8) StringError!usize {
         return self.findFrom(0, char);
     }
 
-    pub fn findFrom(self: String, start: usize, char: u8) String.StringError!usize {
+    pub fn findBeforeOther(self: String, start: usize, char: u8, other: u8) StringError!usize {
+        var other_index: usize = 0;
+
+        // Get index of other character.
+        if (self.findFrom(start, other)) |index| {
+            other_index = index;
+        } else |err| {
+            switch (err) {
+                StringError.CharNotFound => other_index = self.len, // other char not found. Allow char to be anywhere in the remaining string.
+                else => return err,
+            }
+        }
+        const char_index: usize = try self.findFrom(start, char);
+        if (char_index > other_index) return StringError.InvalidIndex;
+
+        return char_index;
+    }
+
+    pub fn findFrom(self: String, start: usize, char: u8) StringError!usize {
         if (self.len == 0) return StringError.EmptyString else if (start >= self.len) return StringError.InvalidIndex;
         for (start..self.len) |i| if (self._buffer.?[i] == char) return i;
 
@@ -137,7 +155,7 @@ pub const String = struct {
     }
 
     // "Remove" from start (inclusive) to end (exclusive)
-    pub fn remove(self: *String, start: usize, end: usize) String.StringError!void {
+    pub fn remove(self: *String, start: usize, end: usize) StringError!void {
         if (self._buffer == null or self.len == 0) {
             return StringError.EmptyString;
         } else if ((start < 0) or (start > end) or (end > self.len)) {
@@ -167,6 +185,11 @@ pub const String = struct {
         for (chars) |char| try self.append(char);
     }
 
+    pub fn equals(self: String, other: ?String) bool {
+        if (other == null or self.len != other.?.len) return false;
+        return std.mem.eql(u8, self.toSlice(), other.?.toSlice());
+    }
+
     fn alloc(self: *String, size: usize) !void {
         self._buffer = try self.allocator.alloc(u8, size);
         self._capacity = size;
@@ -177,16 +200,16 @@ pub const String = struct {
         self._capacity = new_capacity;
     }
 
-    fn findFirstNonWhiteSpace(self: String, position: String.Position) String.StringError!usize {
+    fn findFirstNonWhiteSpace(self: String, position: String.Position) StringError!usize {
         if (self._buffer == null or self.len == 0) return StringError.EmptyString;
 
         if (position == Position.START) {
-            for (0..self.len) |j| if (!constants.WHITESPACE.contains(self._buffer.?[j])) return j;
+            for (0..self.len) |j| if (!constants.isWhitespace(self._buffer.?[j])) return j;
         } else {
             var i: usize = self.len;
             for (0..self.len) |_| {
                 i -= 1;
-                if (!constants.WHITESPACE.contains(self._buffer.?[i])) return (i);
+                if (!constants.isWhitespace(self._buffer.?[i])) return (i);
             }
         }
         return StringError.CharNotFound;
@@ -464,9 +487,9 @@ test "test find from index" {
 
     for (test_cases) |case| {
         const to_find: u8 = case[0];
-        const start_from: u8 = case[1];
+        const start: u8 = case[1];
         const exp_index: u8 = case[2];
-        try testing.expectEqual(exp_index, try alphabet.findFrom(start_from, to_find));
+        try testing.expectEqual(exp_index, try alphabet.findFrom(start, to_find));
     }
 
     try alphabet.remove(31, 32); // remove second 'f'
@@ -477,6 +500,57 @@ test "test find from index" {
     defer empty_string.deinit();
 
     try testing.expectError(String.StringError.EmptyString, empty_string.findFrom(0, 'b'));
+}
+
+test "test find before other" {
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer testing.expectEqual(std.heap.Check.ok, gpa.deinit()) catch @panic("String leak");
+
+    const allocator = gpa.allocator();
+
+    var alphabet: String = try String.initWithValue(allocator, "abcdefghijklmnopqrstuvqxyzABCDEFGHIJKLMNOPQRSTUVWXYZ");
+    defer alphabet.deinit();
+
+    const success_cases = [_][4]u8{
+        [4]u8{ 'f', 'Z', 0, 5 },
+        [4]u8{ 'z', 'Z', 0, 25 },
+        [4]u8{ 'a', 'Z', 0, 0 },
+        [4]u8{ 'o', 'Z', 0, 14 },
+        [4]u8{ 'e', 'e', 0, 4 },
+        [4]u8{ 'F', '*', 0, 31 },
+    };
+
+    const failure_cases_other_before_char = [_][3]u8{
+        [3]u8{ 'A', 'a', 0 },
+        [3]u8{ 'e', 'b', 0 },
+    };
+    const failure_cases_char_not_found = [_][3]u8{
+        [3]u8{ 'f', 'Z', 20 },
+        [3]u8{ '*', 'Z', 0 },
+    };
+
+    for (success_cases) |case| {
+        const to_find: u8 = case[0];
+        const other: u8 = case[1];
+        const start: u8 = case[2];
+        const exp_index: u8 = case[3];
+
+        try testing.expectEqual(exp_index, try alphabet.findBeforeOther(start, to_find, other));
+    }
+
+    for (failure_cases_other_before_char) |case| {
+        const to_find: u8 = case[0];
+        const other: u8 = case[1];
+        const start: u8 = case[2];
+        try testing.expectError(String.StringError.InvalidIndex, alphabet.findBeforeOther(start, to_find, other));
+    }
+
+    for (failure_cases_char_not_found) |case| {
+        const to_find: u8 = case[0];
+        const other: u8 = case[1];
+        const start: u8 = case[2];
+        try testing.expectError(String.StringError.CharNotFound, alphabet.findBeforeOther(start, to_find, other));
+    }
 }
 
 test "test append - single, no initial values" {
@@ -528,7 +602,7 @@ test "test append - multi, no initial values" {
         exp_len += case.len;
         try string.appendSlice(case);
         try testing.expectEqual(exp_len, string.len);
-        try testing.expectEqualStrings(case, string.getSlice((string.len - case.len), string.len));
+        try testing.expectEqualStrings(case, try string.getSlice((string.len - case.len), string.len));
     }
 }
 
@@ -547,6 +621,68 @@ test "test append - multi, initial values" {
         exp_len += case.len;
         try string.appendSlice(case);
         try testing.expectEqual(exp_len, string.len);
-        try testing.expectEqualStrings(case, string.getSlice((string.len - case.len), string.len));
+        try testing.expectEqualStrings(case, try string.getSlice((string.len - case.len), string.len));
     }
+}
+
+test "test equals - non-equal" {
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer testing.expectEqual(std.heap.Check.ok, gpa.deinit()) catch @panic("String leak");
+
+    const allocator = gpa.allocator();
+
+    const test_cases = [_][2][]const u8{
+        [2][]const u8{ "foo", "fo" },
+        [2][]const u8{ "ba", "bar" },
+        [2][]const u8{ "teSt", "test" },
+    };
+
+    for (test_cases) |case| {
+        var string1: String = try String.initWithValue(allocator, case[0]);
+        defer string1.deinit();
+
+        var string2: String = try String.initWithValue(allocator, case[1]);
+        defer string2.deinit();
+
+        try testing.expectEqual(false, string1.equals(string2));
+    }
+
+    var empty_string = String.init(allocator);
+    defer empty_string.deinit();
+
+    var non_empty_string = try String.initWithValue(allocator, "Hello World");
+    defer non_empty_string.deinit();
+
+    try testing.expectEqual(false, empty_string.equals(non_empty_string));
+}
+
+test "test equals - equals" {
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer testing.expectEqual(std.heap.Check.ok, gpa.deinit()) catch @panic("String leak");
+
+    const allocator = gpa.allocator();
+
+    const test_cases = [_][2][]const u8{
+        [2][]const u8{ "foo", "foo" },
+        [2][]const u8{ "bar", "bar" },
+        [2][]const u8{ "test", "test" },
+    };
+
+    for (test_cases) |case| {
+        var string1: String = try String.initWithValue(allocator, case[0]);
+        defer string1.deinit();
+
+        var string2: String = try String.initWithValue(allocator, case[1]);
+        defer string2.deinit();
+
+        try testing.expectEqual(true, string1.equals(string2));
+    }
+
+    var empty_string1 = String.init(allocator);
+    defer empty_string1.deinit();
+
+    var empty_string2 = String.init(allocator);
+    defer empty_string2.deinit();
+
+    try testing.expectEqual(true, empty_string1.equals(empty_string2));
 }
