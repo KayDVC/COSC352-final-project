@@ -15,6 +15,10 @@ This is my implementation of [project from a course](https://github.com/compsage
 
 ## Use 
 
+Run `docker build . -t project3 && docker run -v $(pwd):/app project3`
+
+Note: Zig provides no options for managing build output so, it may look like it's just spinning for a second. Trust the process... 
+
 This project is not intended to be used as a template or guide, but it can definitely can be used as "inspiration." Please link back to [this repo](https://github.com/KayDVC/semmed-neo4j) or [my website](https://www.malakaispann.com) if you do.
 
 Thanks, 

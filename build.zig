@@ -7,7 +7,7 @@ pub fn build(builder: *Build) void {
     // Builds application.
     const executable = builder.addExecutable(.{
         .name = "extractor",
-        .root_source_file = builder.path("src/main.zig"),
+        .root_source_file = builder.path("src/extract_tables.zig"),
         .target = builder.graph.host,
     });
     builder.installArtifact(executable);

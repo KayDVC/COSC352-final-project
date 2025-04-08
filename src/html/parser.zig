@@ -85,11 +85,15 @@ pub const Node = struct {
         extract_status: ExtractStatus,
     };
 
-    pub fn getTree(self: Node, level: usize, out: *String) !void {
+    pub fn getTree(self: Node, out: *String) !void {
+        try self._getTree(0, out);
+    }
+
+    fn _getTree(self: Node, level: usize, out: *String) !void {
         const formatted_string = try std.fmt.allocPrint(
             self.allocator,
-            "Tag: {s}, Address: {*}, Content: {s}\n",
-            .{ self.tag.?.toSlice(), &self, if (self.content) |content| content.toSlice() else "" },
+            "Tag: {s}, Tag Cap: {d}, Address: {*}, Content: {s}\n",
+            .{ self.tag.?.toSlice(), self.tag.?._capacity, &self, if (self.content) |content| content.toSlice() else "" },
         );
         defer self.allocator.free(formatted_string);
 
@@ -101,21 +105,37 @@ pub const Node = struct {
 
         if (self.children) |children| {
             for (children.items) |child| {
-                try child.getTree(level + 1, out);
+                try child._getTree(level + 1, out);
             }
         }
     }
 
-    pub fn findTags(self: Node, tag: String) []const *Node {
-        var matching_nodes = std.ArrayList(*Node).init(self.allocator);
+    pub fn findTags(self: *const Node, tag: *String) ![]*const Node {
+        var matching_nodes = std.ArrayList(*const Node).init(self.allocator);
         defer matching_nodes.deinit();
+
+        try self._findTags(tag, &matching_nodes);
+        return matching_nodes.toOwnedSlice() catch &[_]*const Node{};
+    }
+
+    fn _findTags(self: *const Node, tag: *String, matching_nodes: *std.ArrayList(*const Node)) !void {
+        if (tag.equals(self.tag)) try matching_nodes.append(self);
 
         if (self.children) |children| {
             for (children.items) |child| {
-                if (tag.equals(child.tag)) matching_nodes.append(child);
+                try child._findTags(tag, matching_nodes);
             }
         }
-        return matching_nodes.toOwnedSlice() catch &[_]*Node{};
+    }
+
+    pub fn getAllContent(self: *const Node, string: *String) !void {
+        if (self.content) |content| try string.appendSlice(content.toSlice());
+
+        if (self.children) |children| {
+            for (children.items) |child| {
+                try child.getAllContent(string);
+            }
+        }
     }
 
     fn init(allocator: Allocator) Node {
@@ -222,7 +242,6 @@ pub const Node = struct {
         var is_self_closing: bool = false;
         for (KNOWN_SELF_CLOSING_TAGS) |sct| {
             if (!std.mem.eql(u8, sct, tag.toSlice())) continue;
-
             is_self_closing = true;
             break;
         }

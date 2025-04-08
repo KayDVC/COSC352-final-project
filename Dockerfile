@@ -8,7 +8,7 @@ RUN apk update && \
     apk add zig && \
     rm -rf /var/cache/apk
 
-COPY . /apps/project3
-WORKDIR /apps/project3
+WORKDIR /app
 
-# ENTRYPOINT [ "zig", "build", "test", "--summary", "all" ]
+ENTRYPOINT [ "zig"]
+CMD ["build", "run", "--release=fast"]

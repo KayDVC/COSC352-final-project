@@ -4,6 +4,10 @@
 # IDE
 .vscode
 
+
 # Zig Artifacts
 zig-out/
 .zig*/
+
+# Program Artifacts
+**/output
