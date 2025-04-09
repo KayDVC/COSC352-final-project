@@ -25,6 +25,7 @@ pub const String = struct {
         END,
     };
 
+    /// Initializes the struct instance.
     pub fn init(allocator: Allocator) String {
         return String{
             .len = 0,
@@ -32,14 +33,22 @@ pub const String = struct {
         };
     }
 
+    /// Initializes the struct instance, allocating some initial memory.
+    ///
+    /// Args:
+    ///     allocator: the allocator that will dynamically allocate all memory.
+    ///     capacity: the number of bytes to allocate after initializing the struct.
     pub fn initReserve(allocator: Allocator, capacity: usize) !String {
         var string = String.init(allocator);
         try string.alloc(capacity);
         return string;
     }
 
-    /// Creates owned buffer of data. Caller should handle deallocation of input
-    /// buffer.
+    /// Initializes the struct with some data. Data is copied and owned by the string.
+    ///
+    /// Args:
+    ///     allocator: the allocator that will dynamically allocate all memory.
+    ///     value: the value to store in the buffer.
     pub fn initWithValue(allocator: Allocator, value: []const u8) !String {
         var string = try String.initReserve(allocator, value.len);
         @memcpy(string._buffer.?, value);
@@ -56,10 +65,16 @@ pub const String = struct {
         self.* = undefined;
     }
 
-    pub fn toSlice(self: String) []u8 {
+    /// Returns all bytes in internal buffer.
+    pub fn toSlice(self: *const String) []const u8 {
         return self.getSlice(0, self.len) catch &[_]u8{};
     }
 
+    /// Returns bytes in internal buffer between start (inclusive) and end(exclusive) index.
+    ///
+    /// Args:
+    ///     start: the start of the range to retrieve. 0-index.
+    ///     end: the end of the range to retrieve.
     pub fn getSlice(self: String, start: usize, end: usize) StringError![]u8 {
         if (self._buffer == null) return StringError.EmptyString;
         if ((start >= self.len) or (end > self.len)) return StringError.InvalidIndex;
@@ -67,16 +82,26 @@ pub const String = struct {
         return self._buffer.?[start..end];
     }
 
-    pub fn at(self: String, index: usize) StringError!u8 {
+    /// Returns character at specified index.
+    pub fn at(self: *const String, index: usize) StringError!u8 {
         if (index >= self.len) return StringError.InvalidIndex;
         return self._buffer.?[index];
     }
 
-    pub fn split(self: *String, allocator: Allocator) ![]String {
+    /// Divides string by newline delimiter.
+    ///
+    /// Args:
+    ///     allocator: the allocator that allocates all dynamic memory.
+    pub fn split(self: *const String, allocator: Allocator) ![]String {
         return try self.splitAtChar(allocator, constants.NEWLINE);
     }
 
-    pub fn splitAtChar(self: *String, allocator: Allocator, separator: u8) ![]String {
+    /// Divides string by specified delimiter.
+    ///
+    /// Args:
+    ///     allocator: the allocator that allocates all dynamic memory.
+    ///     separator: the delimiter to split the string. Removed from new strings.
+    pub fn splitAtChar(self: *const String, allocator: Allocator, separator: u8) ![]String {
         if (self._buffer) |buffer| {
             var array = std.ArrayList(String).init(allocator);
             defer array.deinit();
@@ -90,13 +115,12 @@ pub const String = struct {
                     try array.append(try String.initWithValue(allocator, buffer[last_start..buffer.len]));
                 }
             }
-
             return try array.toOwnedSlice();
         }
-
         return StringError.EmptyString;
     }
 
+    /// Removes whitespace chars (if any) from the start of the string.
     pub fn lstrip(self: *String) void {
         if (self.findFirstNonWhiteSpace(Position.START)) |end| {
             _ = self.remove(0, end) catch void;
@@ -105,6 +129,7 @@ pub const String = struct {
         }
     }
 
+    /// Removes whitespace chars (if any) from the end of the string.
     pub fn rstrip(self: *String) void {
         // Since find first uses zero-based indexing, and we want to include the char at the
         // index it finds, we need to increment its value by one.
@@ -115,21 +140,33 @@ pub const String = struct {
         }
     }
 
+    /// Removes whitespace chars (if any) from both ends of the string.
     pub fn strip(self: *String) void {
         self.lstrip();
         self.rstrip();
     }
 
-    pub fn contains(self: String, char: u8) bool {
+    /// Returns whether the specified char is in the string.
+    pub fn contains(self: *const String, char: u8) bool {
         _ = self.find(char) catch return false;
         return true;
     }
 
-    pub fn find(self: String, char: u8) StringError!usize {
+    /// Returns the index of the specified char, if found, from the beginning of the string.
+    pub fn find(self: *const String, char: u8) StringError!usize {
         return self.findFrom(0, char);
     }
 
-    pub fn findBeforeOther(self: String, start: usize, char: u8, other: u8) StringError!usize {
+    /// Returns the index of specified char only if it can be found after the specified
+    /// index and is not after the other char
+    ///
+    /// Args:
+    ///     start: the index to start the search.
+    ///     to_find: the character to find.
+    ///     other: a character that to find should be before.
+    ///
+    /// If other is found after start, it's effectively ignored.
+    pub fn findBeforeOther(self: *const String, start: usize, to_find: u8, other: u8) StringError!usize {
         var other_index: usize = 0;
 
         // Get index of other character.
@@ -141,20 +178,26 @@ pub const String = struct {
                 else => return err,
             }
         }
-        const char_index: usize = try self.findFrom(start, char);
+        const char_index: usize = try self.findFrom(start, to_find);
         if (char_index > other_index) return StringError.InvalidIndex;
 
         return char_index;
     }
 
-    pub fn findFrom(self: String, start: usize, char: u8) StringError!usize {
+    /// Returns the index of a specified character if it exists in the string after the specified index;
+    ///
+    /// Args:
+    ///     start: the index to start the search.
+    ///     char: the character to find.
+    pub fn findFrom(self: *const String, start: usize, char: u8) StringError!usize {
         if (self.len == 0) return StringError.EmptyString else if (start >= self.len) return StringError.InvalidIndex;
         for (start..self.len) |i| if (self._buffer.?[i] == char) return i;
 
         return StringError.CharNotFound;
     }
 
-    // "Remove" from start (inclusive) to end (exclusive)
+    /// Removes characters from start (inclusive) to end (exclusive)
+    /// and shifts remaining characters to fill space.
     pub fn remove(self: *String, start: usize, end: usize) StringError!void {
         if (self._buffer == null or self.len == 0) {
             return StringError.EmptyString;
@@ -171,6 +214,7 @@ pub const String = struct {
         self.len -= difference;
     }
 
+    /// Adds character the end of the string.
     pub fn append(self: *String, char: u8) !void {
         if (self._buffer == null) {
             try self.alloc(_GROWTH_RATE);
@@ -181,13 +225,19 @@ pub const String = struct {
         self.len += 1;
     }
 
+    /// Adds slice to the end of the string.
     pub fn appendSlice(self: *String, chars: []const u8) !void {
         for (chars) |char| try self.append(char);
     }
 
-    pub fn equals(self: String, other: ?String) bool {
-        if (other == null or self.len != other.?.len) return false;
-        return std.mem.eql(u8, self.toSlice(), other.?.toSlice());
+    /// Returns whether the two strings have the same value.
+    pub fn equals(self: *const String, other: *const ?String) bool {
+        if (other.* == null and self.len == 0) {
+            return true;
+        } else if (other.* == null or self.len != other.*.?.len) {
+            return false;
+        }
+        return std.mem.eql(u8, self.toSlice(), other.*.?.toSlice());
     }
 
     fn alloc(self: *String, size: usize) !void {
@@ -200,7 +250,7 @@ pub const String = struct {
         self._capacity = new_capacity;
     }
 
-    fn findFirstNonWhiteSpace(self: String, position: String.Position) StringError!usize {
+    fn findFirstNonWhiteSpace(self: *const String, position: String.Position) StringError!usize {
         if (self._buffer == null or self.len == 0) return StringError.EmptyString;
 
         if (position == Position.START) {
@@ -215,6 +265,7 @@ pub const String = struct {
         return StringError.CharNotFound;
     }
 
+    /// Couldn't be bothered to deal with Zig's overly verbose syntax.
     fn handleEmptyStringStrip(self: *String, err: StringError) void {
         switch (err) {
             StringError.CharNotFound => { // Empty String, just "remove" all.
@@ -644,7 +695,7 @@ test "test equals - non-equal" {
         var string2: String = try String.initWithValue(allocator, case[1]);
         defer string2.deinit();
 
-        try testing.expectEqual(false, string1.equals(string2));
+        try testing.expectEqual(false, string1.equals(@ptrCast(&string2)));
     }
 
     var empty_string = String.init(allocator);
@@ -653,7 +704,7 @@ test "test equals - non-equal" {
     var non_empty_string = try String.initWithValue(allocator, "Hello World");
     defer non_empty_string.deinit();
 
-    try testing.expectEqual(false, empty_string.equals(non_empty_string));
+    try testing.expectEqual(false, empty_string.equals(@ptrCast(&non_empty_string)));
 }
 
 test "test equals - equals" {
@@ -675,7 +726,7 @@ test "test equals - equals" {
         var string2: String = try String.initWithValue(allocator, case[1]);
         defer string2.deinit();
 
-        try testing.expectEqual(true, string1.equals(string2));
+        try testing.expectEqual(true, string1.equals(@ptrCast(&string2)));
     }
 
     var empty_string1 = String.init(allocator);
@@ -684,5 +735,5 @@ test "test equals - equals" {
     var empty_string2 = String.init(allocator);
     defer empty_string2.deinit();
 
-    try testing.expectEqual(true, empty_string1.equals(empty_string2));
+    try testing.expectEqual(true, empty_string1.equals(@ptrCast(&empty_string2)));
 }

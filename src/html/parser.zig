@@ -47,7 +47,8 @@ pub const Parser = struct {
         self.root = null;
     }
 
-    pub fn parse(self: *Parser, html: String) !void {
+    /// Creates Node tree from passed HTML content.
+    pub fn parse(self: *Parser, html: *const String) !void {
         var node = try self.allocator.create(Node);
         node.* = Node.init(self.allocator);
 
@@ -85,11 +86,12 @@ pub const Node = struct {
         extract_status: ExtractStatus,
     };
 
-    pub fn getTree(self: Node, out: *String) !void {
+    /// Adds tabulated information about node and children to passed string.
+    pub fn getTree(self: *Node, out: *String) !void {
         try self._getTree(0, out);
     }
 
-    fn _getTree(self: Node, level: usize, out: *String) !void {
+    fn _getTree(self: *Node, level: usize, out: *String) !void {
         const formatted_string = try std.fmt.allocPrint(
             self.allocator,
             "Tag: {s}, Tag Cap: {d}, Address: {*}, Content: {s}\n",
@@ -110,7 +112,8 @@ pub const Node = struct {
         }
     }
 
-    pub fn findTags(self: *const Node, tag: *String) ![]*const Node {
+    /// Returns a list of all nodes under this node with matching tag.
+    pub fn findTags(self: *const Node, tag: *const String) ![]*const Node {
         var matching_nodes = std.ArrayList(*const Node).init(self.allocator);
         defer matching_nodes.deinit();
 
@@ -118,8 +121,8 @@ pub const Node = struct {
         return matching_nodes.toOwnedSlice() catch &[_]*const Node{};
     }
 
-    fn _findTags(self: *const Node, tag: *String, matching_nodes: *std.ArrayList(*const Node)) !void {
-        if (tag.equals(self.tag)) try matching_nodes.append(self);
+    fn _findTags(self: *const Node, tag: *const String, matching_nodes: *std.ArrayList(*const Node)) !void {
+        if (tag.equals(&self.tag)) try matching_nodes.append(self);
 
         if (self.children) |children| {
             for (children.items) |child| {
@@ -128,6 +131,7 @@ pub const Node = struct {
         }
     }
 
+    /// Appends all content in this node and children to passed string.
     pub fn getAllContent(self: *const Node, string: *String) !void {
         if (self.content) |content| try string.appendSlice(content.toSlice());
 
@@ -174,7 +178,7 @@ pub const Node = struct {
         self.parent = null;
     }
 
-    fn extract(self: *Node, html: String, start: usize) !usize {
+    fn extract(self: *Node, html: *const String, start: usize) !usize {
         if (start >= html.len) return start; // handle edge-case: all content parsed.
 
         const result = try self.extractTag(html, start);
@@ -219,7 +223,7 @@ pub const Node = struct {
         return curr;
     }
 
-    fn extractTag(self: *Node, html: String, start: usize) !Node.NodeExtractionResult {
+    fn extractTag(self: *Node, html: *const String, start: usize) !Node.NodeExtractionResult {
         if (tokens.TAG_START != try html.at(start)) return NodeError.ExtractionError;
         const post_start = (Node.ensureNonSpecial(html, start) catch return NodeError.SpecialIndicatorError) + 1;
 
@@ -250,7 +254,7 @@ pub const Node = struct {
         return NodeExtractionResult{ .last_index = tag_end, .extract_status = if (is_self_closing) ExtractStatus.FINISHED else ExtractStatus.CONTINUE };
     }
 
-    fn ensureNonSpecial(html: String, start: usize) !usize {
+    fn ensureNonSpecial(html: *const String, start: usize) !usize {
         var curr = start;
         // Skip comments and other "special" tags not parsed in this implementation.
         while (try html.at(curr + 1) == tokens.SPECIAL_INDICATOR) {
@@ -315,7 +319,7 @@ test "test single tag" {
     var node = Node.init(allocator);
     defer node.deinit();
 
-    try testing.expectEqual((html.len - 1), try node.extract(html, 0));
+    try testing.expectEqual((html.len - 1), try node.extract(&html, 0));
     try testing.expectEqualStrings(tag, node.tag.?.toSlice());
     try testing.expectEqualStrings(content, node.content.?.toSlice());
     try testing.expectEqual(null, node.parent);
@@ -356,7 +360,7 @@ test "test nested tags" {
     var node = Node.init(allocator);
     defer node.deinit();
 
-    try testing.expectEqual((html.len - 1), try node.extract(html, 0));
+    try testing.expectEqual((html.len - 1), try node.extract(&html, 0));
     try testing.expectEqualStrings(parent_tag, node.tag.?.toSlice());
 
     try testing.expectEqual(null, node.content);
@@ -405,7 +409,7 @@ test "test invalid tag" {
         var node = Node.init(allocator);
         defer node.deinit();
 
-        try testing.expectError(Node.NodeError.IncompleteTag, node.extract(html, 0));
+        try testing.expectError(Node.NodeError.IncompleteTag, node.extract(&html, 0));
     }
 }
 
@@ -448,7 +452,7 @@ test "test self closing tag" {
     var node = Node.init(allocator);
     defer node.deinit();
 
-    try testing.expectEqual((html.len - 1), try node.extract(html, 0));
+    try testing.expectEqual((html.len - 1), try node.extract(&html, 0));
     try testing.expectEqualStrings(parent_tag, node.tag.?.toSlice());
 
     try testing.expectEqual(null, node.content);
@@ -478,7 +482,7 @@ test "test parse example doc" {
     defer testing.expectEqual(std.heap.Check.ok, gpa.deinit()) catch @panic("String leak");
 
     const allocator = gpa.allocator();
-    var html: String = try String.initWithValue(allocator,
+    var html = try String.initWithValue(allocator,
         \\<!DOCTYPE html>
         \\<html>
         \\    <head>
@@ -494,7 +498,7 @@ test "test parse example doc" {
     var parser = Parser.init(allocator);
     defer parser.deinit();
 
-    try parser.parse(html);
+    try parser.parse(&html);
 
     var root = parser.root.?;
 

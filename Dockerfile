@@ -10,5 +10,5 @@ RUN apk update && \
 
 WORKDIR /app
 
-ENTRYPOINT [ "zig"]
-CMD ["build", "run", "--release=fast"]
+ENTRYPOINT [ "zig", "build"]
+CMD ["run", "--release=fast"]

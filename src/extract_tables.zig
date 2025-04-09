@@ -22,7 +22,7 @@ pub fn main() !void {
     var parser = html.Parser.init(allocator);
     defer parser.deinit();
 
-    try parser.parse(page_content);
+    try parser.parse(&page_content);
     elapsed = @floatFromInt(timer.lap());
     std.debug.print("Parser took : {d:.5}ms\n", .{
         elapsed / std.time.ns_per_ms,
@@ -53,7 +53,9 @@ pub fn main() !void {
     std.debug.print("Check 'output' folder for generated csv files", .{});
 }
 
-fn getTempDir() !std.fs.Dir {
+/// Retrieves file handle to 'output' directory in current directory.
+/// Creates if unavailable.
+fn getOutputDir() !std.fs.Dir {
     const dir_name = "output";
     const cwd = std.fs.cwd();
 
@@ -63,15 +65,20 @@ fn getTempDir() !std.fs.Dir {
     };
 }
 
+/// Gets HTML body from required URL.
 fn retrievePage() !String {
-    var request = try http.Request.init("https://en.wikipedia.org/wiki/List_of_largest_companies_in_the_United_States_by_revenue");
-    defer request.deinit();
-
-    return request.get(allocator);
+    return try http.Request.get(allocator, "https://en.wikipedia.org/wiki/List_of_largest_companies_in_the_United_States_by_revenue");
 }
 
-fn writeToFile(filename: *String, content: *String) !void {
-    var temp_dir = try getTempDir();
+/// Write content to file.
+///
+/// Args:
+///     filename: the name to give file.
+///     content: the content to write to the file.
+///
+/// File will be stored in 'output' directory.
+fn writeToFile(filename: *const String, content: *const String) !void {
+    var temp_dir = try getOutputDir();
     defer temp_dir.close();
 
     var file = try temp_dir.createFile(filename.toSlice(), .{});
@@ -80,7 +87,14 @@ fn writeToFile(filename: *String, content: *String) !void {
     try file.writeAll(content.toSlice());
 }
 
-fn writeAsCsv(filename: *String, table_node: *const html.Node) !void {
+/// Extracts data from table and writes to file in CSV format.
+///
+/// Args:
+///     filename: the name to give the output file.
+///     table_node: the root node of the table element.
+///
+/// File will be stored in 'output' directory.
+fn writeAsCsv(filename: *const String, table_node: *const html.Node) !void {
     var csv_data = String.init(allocator);
     defer csv_data.deinit();
 
