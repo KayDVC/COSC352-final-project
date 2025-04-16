@@ -9,6 +9,8 @@
 ## Overview
 This is my implementation of [project from a course](https://github.com/compsage/MSU_COSC352/tree/main/projects/3) taught by [Jon White]((https://www.linkedin.com/in/jon-white-bb0b174a/)), a coworker at my current job. 
 
+A presentation I prepared to present to Jon's students is also available under the ["docs"](./docs/) folder.
+
 ## Objective
 
 The basic objective of this project is, using an unfamiliar programming language, parse the content of a [Wikipedia Page](https://en.wikipedia.org/wiki/List_of_largest_companies_in_the_United_States_by_revenue) and extract the tables from that page to 

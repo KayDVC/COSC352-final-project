@@ -1,0 +1,3 @@
+van_gough_starry_night_puzzle: https://www.pomegranate.com/products/vincent-van-gogh-the-starry-night-1000-piece-jigsaw-puzzle
+zig-logo-dark: https://github.com/ziglang/logo (converted from svg -> png using an online converter)
+docker-logo-blue: https://www.docker.com/company/newsroom/media-resources/
